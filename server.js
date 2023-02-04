@@ -21,7 +21,7 @@ import ContenedorMongoDb from "./src/contenedores/ContenedorMongoDb.js"
 const usuariosDb = new ContenedorMongoDb("usuarios", {
         username: { type: String, required: true },
         password: { type: String, required: true },
-        direccion: { type: String, required: true }
+        email: { type: String, required: true }
 })
 
 
@@ -47,12 +47,10 @@ passport.use(new LocalStrategy(
 
         //Logica para validar si un usuario existe
         await usuariosDb.listar(username).then(data=>{
-            
-            if (!data) {
-                return done(null, false);
-            } else {
-                const usuarioEncontrado = data.find(usuario=> usuario.username == username)
-                
+
+            const usuarioEncontrado = data.find(usuario=> usuario.username == username)
+
+            if(usuarioEncontrado){
                 const userPassword = usuarioEncontrado.password
                 const match = verifyPass(userPassword, password)
     
@@ -60,18 +58,26 @@ passport.use(new LocalStrategy(
                     return done(null, false)
                 }
                 return done(null, data);
-            }       
+            }
+            else{
+                console.log("Usuario no encontrado en la DB")
+                return done(null, false);
+            }
         })
     }
 ))
 
-passport.serializeUser(function(user, done) {
-    done(null, user);
-});
+passport.serializeUser((user, done)=> {
+    const usuario = user[0]
+    done(null, usuario.username);
+})
   
-passport.deserializeUser(function(user, done) {
-    done(null, user);
-});
+passport.deserializeUser((username, done)=> {
+    usuariosDb.listar(username).then(data=>{
+        const usuarioEncontrado = data.find(usuario=> usuario.username == username)
+        done(null, usuarioEncontrado);
+    })
+})
 
 
 
@@ -160,7 +166,7 @@ app.get('/datos', isAuth, (req, res) => {
     }
     const datosUsuario = {
         nombre: req.user.username,
-        direccion: req.user.direccion
+        email: req.user.email
     }
     res.render('datos', { contador: req.user.contador, datos: datosUsuario });
 })
@@ -169,15 +175,22 @@ app.get('/datos', isAuth, (req, res) => {
 
 
 app.post('/register', async (req, res) => {
-    const { username, password, direccion } = req.body;
-    const newUser = { username: username, password: await generateHashPassword(password), direccion: direccion }
+    const { username, password, email } = req.body;
+    const newUser = { username: username, password: await generateHashPassword(password), email: email }
 
     await usuariosDb.listar(username).then(data=>{
         
+        const usuarioEncontrado = data.find(usuario=> usuario.username == username)
 
-        usuariosDb.guardar(newUser)
+        if(usuarioEncontrado){
+            console.log("Usuario ya existente")
+            res.redirect("/register-error")
+        }else{
+            console.log("Nuevo usuario creado")
+            usuariosDb.guardar(newUser)
+            res.redirect('/login')
+        }
 
-        res.redirect('/login')
         
     })
 
@@ -197,7 +210,9 @@ app.get('/login-error', (req, res) => {
     res.render('login-error');
 })
 
-
+app.get('/register-error', (req, res) => {
+    res.render('registro-error');
+})
 
 
 
